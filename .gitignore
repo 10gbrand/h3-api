@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Data
+data/*.duckdb
+data/*.parquet
+
+# IDE
+.idea/
+.vscode/
+
+# macOS
+.DS_Store
+
+# UV
+.uv/

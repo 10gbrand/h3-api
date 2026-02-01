@@ -1,0 +1,22 @@
+# H3 API Docker Compose
+#
+# Kopplar till g-etl:s warehouse.duckdb
+#
+# Starta: docker compose up
+# Stoppa: docker compose down
+
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount g-etl data directory (read-only)
+      - ../g-etl/data:/app/data:ro
+    environment:
+      - H3_API_DATABASE_PATH=/app/data/warehouse.duckdb
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
