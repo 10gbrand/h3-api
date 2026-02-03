@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, HTTPException
 import h3
+from h3 import LatLngPoly
 
 from h3_api.config import settings
 from h3_api.models import Feature, FeatureCollection, HexProperties
@@ -12,8 +13,12 @@ router = APIRouter(prefix="/hexbin", tags=["hexbin"])
 
 def cell_to_polygon(cell: str) -> dict:
     """Convert H3 cell to GeoJSON polygon."""
-    boundary = h3.cell_to_boundary(cell, geo_json=True)
-    return {"type": "Polygon", "coordinates": [boundary]}
+    # h3 v4 returns (lat, lng) tuples, GeoJSON needs [lng, lat]
+    boundary = h3.cell_to_boundary(cell)
+    coords = [[lng, lat] for lat, lng in boundary]
+    # Close the polygon ring
+    coords.append(coords[0])
+    return {"type": "Polygon", "coordinates": [coords]}
 
 
 @router.get("", response_model=FeatureCollection)
@@ -90,19 +95,13 @@ async def get_hexbin_viewport(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid bbox format")
 
-    # Create viewport polygon
-    poly = {
-        "type": "Polygon",
-        "coordinates": [
-            [
-                [min_lng, min_lat],
-                [min_lng, max_lat],
-                [max_lng, max_lat],
-                [max_lng, min_lat],
-                [min_lng, min_lat],
-            ]
-        ],
-    }
+    # Create viewport polygon using h3 v4 LatLngPoly (lat, lng order)
+    poly = LatLngPoly([
+        (min_lat, min_lng),
+        (max_lat, min_lng),
+        (max_lat, max_lng),
+        (min_lat, max_lng),
+    ])
 
     # Get cells covering viewport
     cells = list(h3.polygon_to_cells(poly, res))
@@ -132,8 +131,10 @@ async def get_cell(cell_id: str) -> dict:
     if not h3.is_valid_cell(cell_id):
         raise HTTPException(status_code=400, detail="Invalid H3 cell ID")
 
-    # Get cell info
-    boundary = h3.cell_to_boundary(cell_id, geo_json=True)
+    # Get cell info (h3 v4 returns lat, lng tuples)
+    boundary_raw = h3.cell_to_boundary(cell_id)
+    boundary = [[lng, lat] for lat, lng in boundary_raw]
+    boundary.append(boundary[0])  # Close the ring
     center = h3.cell_to_latlng(cell_id)
     resolution = h3.get_resolution(cell_id)
     neighbors = list(h3.grid_ring(cell_id, 1))
