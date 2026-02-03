@@ -24,3 +24,8 @@ tasks:
     desc: Fixa formatering och lint-fel
     cmds:
       - task py:fix
+
+  viewer:
+    desc: Öppna kartvisaren (deck.gl)
+    cmds:
+      - task api:viewer

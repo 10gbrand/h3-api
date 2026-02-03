@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>H3 API - deck.gl Viewer</title>
+    <script src="https://unpkg.com/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+    <script src="https://unpkg.com/deck.gl@9.0.16/dist.min.js"></script>
+    <script src="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@4.1.0/dist/maplibre-gl.css" rel="stylesheet" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+
+        #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+
+        .control-panel {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            max-width: 300px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .control-panel h2 { font-size: 16px; margin-bottom: 5px; color: #333; }
+        .control-panel .subtitle { font-size: 11px; color: #666; margin-bottom: 15px; }
+        .control-panel h3 {
+            font-size: 13px;
+            margin: 15px 0 8px 0;
+            color: #666;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+
+        select, input[type="range"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            margin-bottom: 10px;
+        }
+        input[type="range"] { padding: 0; margin: 8px 0; }
+
+        .resolution-value {
+            text-align: center;
+            font-weight: bold;
+            color: #0066cc;
+            margin-bottom: 10px;
+        }
+
+        .btn {
+            background: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+        .btn:hover { background: #0055aa; }
+        .btn:disabled { background: #ccc; cursor: not-allowed; }
+
+        .loaded-layer {
+            display: flex;
+            align-items: center;
+            padding: 8px 10px;
+            margin: 6px 0;
+            background: #f8f8f8;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        .loaded-layer.hidden { opacity: 0.5; }
+        .loaded-layer .toggle { cursor: pointer; margin-right: 8px; font-size: 14px; }
+        .loaded-layer .color-box {
+            width: 14px; height: 14px;
+            border-radius: 3px;
+            margin-right: 8px;
+            flex-shrink: 0;
+        }
+        .loaded-layer .info { flex: 1; }
+        .loaded-layer .name { font-weight: 500; }
+        .loaded-layer .count { color: #0066cc; font-size: 11px; }
+        .loaded-layer .remove { cursor: pointer; color: #999; margin-left: 8px; }
+        .loaded-layer .remove:hover { color: #c00; }
+
+        .empty-message { color: #999; font-size: 12px; font-style: italic; padding: 10px 0; }
+
+        .status {
+            font-size: 11px;
+            color: #666;
+            margin-top: 12px;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+
+        .tooltip {
+            position: absolute;
+            background: white;
+            padding: 10px 12px;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 2000;
+            max-width: 250px;
+        }
+        .tooltip .title { font-weight: bold; margin-bottom: 5px; }
+        .tooltip .row { display: flex; justify-content: space-between; margin: 2px 0; }
+        .tooltip .label { color: #666; }
+        .tooltip .value { font-weight: 500; margin-left: 10px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div id="tooltip" class="tooltip" style="display: none;"></div>
+
+    <div class="control-panel">
+        <h2>H3 API Viewer</h2>
+        <div class="subtitle">deck.gl + H3HexagonLayer (GPU-accelererad)</div>
+
+        <h3>H3 Resolution</h3>
+        <input type="range" id="resolution" min="3" max="9" value="5">
+        <div class="resolution-value">Resolution: <span id="res-value">5</span></div>
+
+        <h3>Lägg till lager</h3>
+        <select id="layer-select">
+            <option value="">Laddar...</option>
+        </select>
+        <button class="btn" id="load-btn" disabled>Ladda lager</button>
+
+        <h3>Aktiva lager</h3>
+        <div id="loaded-layers">
+            <div class="empty-message">Inga lager laddade</div>
+        </div>
+
+        <div class="status" id="status">Välj lager och klicka "Ladda"</div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000';
+        const { DeckGL, H3HexagonLayer } = deck;
+
+        // Colors per layer
+        const LAYER_COLORS = {
+            'naturreservat': [34, 139, 34],
+            'nationalparker': [0, 100, 0],
+            'biotopskydd': [50, 205, 50],
+            'kulturreservat': [139, 69, 19],
+            'naturminnen_punkt': [255, 215, 0],
+            'naturminnen_ytor': [255, 165, 0],
+            'naturvardsavtal': [154, 205, 50],
+            'Naturvardsomrade': [107, 142, 35],
+            'ramsar_vatmarker': [65, 105, 225],
+            'skyddsvarda_statliga_skogar': [46, 139, 87],
+            'vso': [32, 178, 170]
+        };
+
+        let deckgl;
+        let availableLayers = [];
+        let loadedLayers = {}; // { name: { visible, data, color } }
+        let currentResolution = 5;
+
+        // Initialize deck.gl with MapLibre
+        function initMap() {
+            deckgl = new DeckGL({
+                container: 'map',
+                mapStyle: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+                initialViewState: {
+                    latitude: 63,
+                    longitude: 16,
+                    zoom: 4,
+                    pitch: 0,
+                    bearing: 0
+                },
+                controller: true,
+                layers: [],
+                getTooltip: ({object}) => object && {
+                    html: `
+                        <div class="title">${object.layer || 'H3 Cell'}</div>
+                        <div class="row"><span class="label">Cell:</span><span class="value">${object.hex}</span></div>
+                        <div class="row"><span class="label">Count:</span><span class="value">${object.count.toLocaleString()}</span></div>
+                    `,
+                    style: {
+                        backgroundColor: 'white',
+                        padding: '10px',
+                        borderRadius: '4px',
+                        boxShadow: '0 2px 10px rgba(0,0,0,0.2)',
+                        fontSize: '12px'
+                    }
+                }
+            });
+        }
+
+        // Fetch available layers
+        async function fetchLayers() {
+            try {
+                const response = await fetch(`${API_URL}/hexbin/layers`);
+                availableLayers = await response.json();
+                renderLayerSelect();
+            } catch (error) {
+                document.getElementById('layer-select').innerHTML = '<option>Fel vid laddning</option>';
+                updateStatus('Kunde inte ansluta till API');
+            }
+        }
+
+        function renderLayerSelect() {
+            const select = document.getElementById('layer-select');
+            const loaded = Object.keys(loadedLayers);
+            const available = availableLayers.filter(l => !loaded.includes(l.name));
+
+            select.innerHTML = '<option value="">-- Välj lager --</option>' +
+                available.map(l => `<option value="${l.name}">${l.name} (${formatNumber(l.count)})</option>`).join('');
+
+            select.onchange = () => {
+                document.getElementById('load-btn').disabled = !select.value;
+            };
+        }
+
+        function formatNumber(n) {
+            if (n >= 1e6) return (n/1e6).toFixed(1) + 'M';
+            if (n >= 1e3) return (n/1e3).toFixed(1) + 'k';
+            return n;
+        }
+
+        // Resolution slider
+        document.getElementById('resolution').oninput = (e) => {
+            currentResolution = parseInt(e.target.value);
+            document.getElementById('res-value').textContent = currentResolution;
+        };
+
+        // Load layer
+        document.getElementById('load-btn').onclick = loadLayer;
+
+        async function loadLayer() {
+            const select = document.getElementById('layer-select');
+            const name = select.value;
+            if (!name || loadedLayers[name]) return;
+
+            const btn = document.getElementById('load-btn');
+            btn.disabled = true;
+            btn.textContent = 'Laddar...';
+            updateStatus(`Hämtar ${name}...`);
+
+            // Get current view bounds
+            const viewState = deckgl.viewState || deckgl.props.initialViewState;
+            const bounds = getBoundsFromViewState(viewState);
+            const bbox = `${bounds.west},${bounds.south},${bounds.east},${bounds.north}`;
+
+            try {
+                // Use fast endpoint - pre-aggregated at res 8
+                const t0 = performance.now();
+                const url = `${API_URL}/hexbin/fast/${name}?bbox=${bbox}`;
+                const response = await fetch(url);
+                const t1 = performance.now();
+                const result = await response.json();
+                const t2 = performance.now();
+
+                console.log(`${name}: API ${(t1-t0).toFixed(0)}ms, Parse ${(t2-t1).toFixed(0)}ms, ${result.count} cells`);
+
+                const data = (result.cells || []).map(c => ({
+                    hex: c.h,
+                    count: c.c,
+                    layer: name
+                }));
+
+                const color = LAYER_COLORS[name] || [100, 100, 100];
+
+                loadedLayers[name] = {
+                    visible: true,
+                    data: data,
+                    color: color,
+                    resolution: currentResolution
+                };
+
+                updateDeckLayers();
+                renderLoadedLayers();
+                renderLayerSelect();
+                updateStatus(`${name}: ${data.length} celler (res ${currentResolution})`);
+
+            } catch (error) {
+                console.error(error);
+                updateStatus(`Fel vid laddning: ${error.message}`);
+            }
+
+            btn.disabled = false;
+            btn.textContent = 'Ladda lager';
+            select.value = '';
+        }
+
+        function getBoundsFromViewState(vs) {
+            // Approximate bounds from center + zoom
+            const latRange = 180 / Math.pow(2, vs.zoom);
+            const lngRange = 360 / Math.pow(2, vs.zoom);
+            return {
+                north: Math.min(90, vs.latitude + latRange),
+                south: Math.max(-90, vs.latitude - latRange),
+                east: Math.min(180, vs.longitude + lngRange),
+                west: Math.max(-180, vs.longitude - lngRange)
+            };
+        }
+
+        function updateDeckLayers() {
+            const layers = Object.entries(loadedLayers)
+                .filter(([_, l]) => l.visible && l.data.length > 0)
+                .map(([name, l]) => new H3HexagonLayer({
+                    id: `h3-${name}`,
+                    data: l.data,
+                    pickable: true,
+                    filled: true,
+                    extruded: false,
+                    getHexagon: d => d.hex,
+                    getFillColor: d => {
+                        const alpha = Math.min(255, 100 + (d.count / 100) * 155);
+                        return [...l.color, alpha];
+                    },
+                    getLineColor: [...l.color, 200],
+                    lineWidthMinPixels: 1
+                }));
+
+            deckgl.setProps({ layers });
+        }
+
+        function renderLoadedLayers() {
+            const container = document.getElementById('loaded-layers');
+            const names = Object.keys(loadedLayers);
+
+            if (names.length === 0) {
+                container.innerHTML = '<div class="empty-message">Inga lager laddade</div>';
+                return;
+            }
+
+            container.innerHTML = names.map(name => {
+                const l = loadedLayers[name];
+                const [r,g,b] = l.color;
+                const hidden = l.visible ? '' : 'hidden';
+                const icon = l.visible ? '👁' : '👁‍🗨';
+
+                return `
+                    <div class="loaded-layer ${hidden}">
+                        <span class="toggle" onclick="toggleLayer('${name}')">${icon}</span>
+                        <span class="color-box" style="background:rgb(${r},${g},${b})"></span>
+                        <div class="info">
+                            <div class="name">${name}</div>
+                            <div class="count">${l.data.length} celler</div>
+                        </div>
+                        <span class="remove" onclick="removeLayer('${name}')">✕</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleLayer(name) {
+            if (!loadedLayers[name]) return;
+            loadedLayers[name].visible = !loadedLayers[name].visible;
+            updateDeckLayers();
+            renderLoadedLayers();
+        }
+
+        function removeLayer(name) {
+            delete loadedLayers[name];
+            updateDeckLayers();
+            renderLoadedLayers();
+            renderLayerSelect();
+            updateStatus('Lager borttaget');
+        }
+
+        function updateStatus(msg) {
+            document.getElementById('status').textContent = msg;
+        }
+
+        // Initialize
+        initMap();
+        fetchLayers();
+    </script>
+</body>
+</html>

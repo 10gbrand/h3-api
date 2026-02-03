@@ -21,6 +21,87 @@ def cell_to_polygon(cell: str) -> dict:
     return {"type": "Polygon", "coordinates": [coords]}
 
 
+@router.get("/layers")
+async def get_layers() -> list[dict]:
+    """
+    Get list of available layers with cell counts.
+
+    Returns list of layer names that can be used with the hexbin endpoint.
+    """
+    db = get_db()
+    return db.get_available_layers()
+
+
+@router.get("/raw")
+async def get_hexbin_raw(
+    bbox: str = Query(..., description="Bounding box: minLng,minLat,maxLng,maxLat"),
+    res: int = Query(default=settings.default_resolution, ge=0, le=15),
+    layer: str = Query(..., description="Layer name"),
+    limit: int = Query(default=settings.max_cells_per_request, le=settings.max_cells_per_request),
+) -> dict:
+    """
+    Get raw H3 cell data (optimized for deck.gl).
+
+    Returns compact JSON without GeoJSON overhead.
+    """
+    try:
+        min_lng, min_lat, max_lng, max_lat = map(float, bbox.split(","))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid bbox format")
+
+    db = get_db()
+    rows = db.get_h3_cells_in_bbox(
+        min_lng, min_lat, max_lng, max_lat, res, limit, layers=[layer]
+    )
+
+    # Return compact format for deck.gl
+    return {
+        "cells": [{"h": r["h3_cell"], "c": r["count"]} for r in rows],
+        "layer": layer,
+        "resolution": res,
+        "count": len(rows),
+    }
+
+
+@router.get("/fast/{layer}")
+async def get_hexbin_fast(
+    layer: str,
+    bbox: str = Query(None, description="Bounding box (optional): minLng,minLat,maxLng,maxLat"),
+) -> dict:
+    """
+    Get all H3 cells for a layer at res-8 (optimized for deck.gl).
+
+    Uses pre-aggregated tables for instant response.
+    deck.gl handles rendering/aggregation on client.
+    """
+    db = get_db()
+    conn = db.connect()
+
+    table = f"mart.h3_{layer}_r8"
+
+    try:
+        if bbox:
+            min_lng, min_lat, max_lng, max_lat = map(float, bbox.split(","))
+            query = f"""
+            SELECT h3, count FROM {table}
+            WHERE lat BETWEEN {min_lat} AND {max_lat}
+              AND lng BETWEEN {min_lng} AND {max_lng}
+            """
+        else:
+            query = f"SELECT h3, count FROM {table}"
+
+        result = conn.execute(query).fetchall()
+
+        return {
+            "cells": [{"h": r[0], "c": r[1]} for r in result],
+            "layer": layer,
+            "resolution": 8,
+            "count": len(result),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Layer not found: {layer}")
+
+
 @router.get("", response_model=FeatureCollection)
 async def get_hexbin(
     bbox: str = Query(
@@ -34,6 +115,10 @@ async def get_hexbin(
         le=15,
         description="H3 resolution (0-15)",
     ),
+    layer: str = Query(
+        default=None,
+        description="Layer name (use /hexbin/layers to see available layers)",
+    ),
     limit: int = Query(
         default=settings.max_cells_per_request,
         le=settings.max_cells_per_request,
@@ -44,6 +129,7 @@ async def get_hexbin(
     Get H3 hexbins for a bounding box.
 
     Returns GeoJSON FeatureCollection with hex polygons and aggregated counts.
+    Optionally filter by layer name.
     """
     try:
         min_lng, min_lat, max_lng, max_lat = map(float, bbox.split(","))
@@ -55,7 +141,8 @@ async def get_hexbin(
 
     # Get cells from database
     db = get_db()
-    rows = db.get_h3_cells_in_bbox(min_lng, min_lat, max_lng, max_lat, res, limit)
+    layers = [layer] if layer else None
+    rows = db.get_h3_cells_in_bbox(min_lng, min_lat, max_lng, max_lat, res, limit, layers=layers)
 
     # Convert to GeoJSON features
     features = []
@@ -68,7 +155,7 @@ async def get_hexbin(
                         cell=row["h3_cell"],
                         resolution=res,
                         count=row["count"],
-                        klass=row.get("klass"),
+                        klass=row.get("layer"),
                         leverantor=row.get("leverantor"),
                     ),
                 )

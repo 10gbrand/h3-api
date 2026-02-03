@@ -1,9 +1,11 @@
 """H3 API - FastAPI application for hexbin/heatmap data."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from h3_api.config import settings
 from h3_api.routes import health_router, hexbin_router
@@ -41,6 +43,12 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(hexbin_router)
 
+# Mount viewer static files
+# Path: main.py -> h3_api -> src -> h3-api -> viewer
+viewer_path = Path(__file__).parent.parent.parent / "viewer"
+if viewer_path.exists():
+    app.mount("/viewer", StaticFiles(directory=viewer_path, html=True), name="viewer")
+
 
 @app.get("/")
 async def root():
@@ -49,8 +57,10 @@ async def root():
         "name": settings.api_title,
         "version": settings.api_version,
         "docs": "/docs",
+        "viewer": "/viewer/",
         "endpoints": {
             "hexbin": "/hexbin?bbox=minLng,minLat,maxLng,maxLat&res=9",
+            "layers": "/hexbin/layers",
             "viewport": "/hexbin/viewport?bbox=...&res=9",
             "cell": "/hexbin/cell/{cell_id}",
             "health": "/health",

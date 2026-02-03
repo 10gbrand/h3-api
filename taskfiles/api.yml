@@ -35,3 +35,20 @@ tasks:
     desc: Kör Docker-container
     cmds:
       - docker run --rm -p 8000:8000 -v ../g-etl/data:/data:ro -e H3_API_DATABASE_PATH=/data/warehouse.duckdb h3-api
+
+  viewer:
+    desc: Öppna kartvisare (deck.gl)
+    cmds:
+      - open http://localhost:8000/viewer/
+
+  layers:
+    desc: Lista tillgängliga lager
+    cmds:
+      - curl -s http://localhost:8000/hexbin/layers | jq
+
+  fast:
+    desc: Hämta snabb H3-data för ett lager (default naturreservat)
+    vars:
+      LAYER: '{{.LAYER | default "naturreservat"}}'
+    cmds:
+      - 'curl -s "http://localhost:8000/hexbin/fast/{{.LAYER}}" | jq "{layer: .layer, resolution: .resolution, count: .count}"'

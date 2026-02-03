@@ -37,11 +37,30 @@ uv pip install -e ".[dev]"
 uv run uvicorn h3_api.main:app --reload
 ```
 
+## Kartvisare (deck.gl)
+
+Projektet inkluderar en inbyggd kartvisare baserad på deck.gl med GPU-accelererad H3-rendering:
+
+```bash
+# Starta API:t och öppna kartvisaren
+task dev
+task viewer
+```
+
+Visaren är tillgänglig på `http://localhost:8000/viewer/` och erbjuder:
+- Lagerväljare med alla tillgängliga dataset
+- Tända/släcka lager utan att ladda om data
+- Färgkodade H3-celler med hover-info
+- Snabb rendering av miljontals celler via pre-aggregerade tabeller
+
 ## Endpoints
 
 | Endpoint | Beskrivning |
 |----------|-------------|
-| `GET /hexbin?bbox=...&res=9` | Hämta H3-celler inom bbox |
+| `GET /hexbin/layers` | Lista tillgängliga lager med antal objekt |
+| `GET /hexbin/fast/{layer}` | Snabb hämtning av pre-aggregerad H3-data (res 8) |
+| `GET /hexbin/raw?bbox=...&layer=...` | Kompakt H3-data för deck.gl |
+| `GET /hexbin?bbox=...&res=9` | GeoJSON FeatureCollection med H3-celler |
 | `GET /hexbin/viewport?bbox=...&res=9` | Tom H3-grid för overlay |
 | `GET /hexbin/cell/{cell_id}` | Detaljer för specifik cell |
 | `GET /health` | Health check |
@@ -50,8 +69,14 @@ uv run uvicorn h3_api.main:app --reload
 ### Exempel
 
 ```bash
-# Hämta hexbins för södra Sverige
-curl "http://localhost:8000/hexbin?bbox=11.0,55.0,14.0,58.0&res=7"
+# Lista tillgängliga lager
+curl "http://localhost:8000/hexbin/layers" | jq
+
+# Hämta naturreservat (snabb, pre-aggregerad)
+curl "http://localhost:8000/hexbin/fast/naturreservat" | jq
+
+# Hämta hexbins för södra Sverige (GeoJSON)
+curl "http://localhost:8000/hexbin?bbox=11.0,55.0,14.0,58.0&res=7&layer=naturreservat"
 
 # Inspektera en specifik cell
 curl "http://localhost:8000/hexbin/cell/871f24a81ffffff"
@@ -108,6 +133,7 @@ Vanliga kommandon (kör `task --list` för alla):
 | Kommando | Beskrivning |
 |----------|-------------|
 | `task dev` | Starta API med auto-reload |
+| `task viewer` | Öppna kartvisaren (deck.gl) |
 | `task test` | Kör tester |
 | `task fix` | Fixa lint/format automatiskt |
 | `task py:ci` | CI-kontroller (format, lint, test) |
