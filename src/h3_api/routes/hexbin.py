@@ -1,7 +1,7 @@
 """Hexbin endpoint for H3 data."""
 
 import h3
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 from h3 import LatLngPoly
 
 from h3_api.config import settings
@@ -34,10 +34,29 @@ async def get_layers() -> list[dict]:
 
 @router.get("/raw")
 async def get_hexbin_raw(
-    bbox: str = Query(..., description="Bounding box: minLng,minLat,maxLng,maxLat"),
-    res: int = Query(default=settings.default_resolution, ge=0, le=15),
-    layer: str = Query(..., description="Layer name"),
-    limit: int = Query(default=settings.max_cells_per_request, le=settings.max_cells_per_request),
+    bbox: str = Query(
+        ...,
+        description="Bounding box: minLng,minLat,maxLng,maxLat",
+        example="17.9,59.3,18.1,59.4",
+    ),
+    res: int = Query(
+        default=settings.default_resolution,
+        ge=0,
+        le=15,
+        description="H3 resolution (0-15)",
+        example=9,
+    ),
+    layer: str = Query(
+        ...,
+        description="Layer name (use /hexbin/layers to see available)",
+        example="naturreservat",
+    ),
+    limit: int = Query(
+        default=settings.max_cells_per_request,
+        le=settings.max_cells_per_request,
+        description="Max cells to return",
+        example=1000,
+    ),
 ) -> dict:
     """
     Get raw H3 cell data (optimized for deck.gl).
@@ -65,8 +84,16 @@ async def get_hexbin_raw(
 
 @router.get("/fast/{layer}")
 async def get_hexbin_fast(
-    layer: str,
-    bbox: str = Query(None, description="Bounding box (optional): minLng,minLat,maxLng,maxLat"),
+    layer: str = Path(
+        ...,
+        description="Layer name",
+        example="naturreservat",
+    ),
+    bbox: str = Query(
+        None,
+        description="Bounding box (optional): minLng,minLat,maxLng,maxLat",
+        example="17.9,59.3,18.1,59.4",
+    ),
 ) -> dict:
     """
     Get all H3 cells for a layer at res-8 (optimized for deck.gl).
@@ -107,22 +134,25 @@ async def get_hexbin(
     bbox: str = Query(
         ...,
         description="Bounding box: minLng,minLat,maxLng,maxLat",
-        examples=["11.0,55.0,24.0,69.0"],
+        example="17.9,59.3,18.1,59.4",
     ),
     res: int = Query(
         default=settings.default_resolution,
         ge=0,
         le=15,
         description="H3 resolution (0-15)",
+        example=9,
     ),
     layer: str = Query(
         default=None,
         description="Layer name (use /hexbin/layers to see available layers)",
+        example="naturreservat",
     ),
     limit: int = Query(
         default=settings.max_cells_per_request,
         le=settings.max_cells_per_request,
         description="Max cells to return",
+        example=1000,
     ),
 ) -> FeatureCollection:
     """
@@ -169,8 +199,18 @@ async def get_hexbin(
 
 @router.get("/viewport", response_model=FeatureCollection)
 async def get_hexbin_viewport(
-    bbox: str = Query(..., description="Bounding box: minLng,minLat,maxLng,maxLat"),
-    res: int = Query(default=settings.default_resolution, ge=0, le=15),
+    bbox: str = Query(
+        ...,
+        description="Bounding box: minLng,minLat,maxLng,maxLat",
+        example="18.0,59.3,18.1,59.35",
+    ),
+    res: int = Query(
+        default=settings.default_resolution,
+        ge=0,
+        le=15,
+        description="H3 resolution (0-15)",
+        example=9,
+    ),
 ) -> FeatureCollection:
     """
     Get empty H3 grid for a viewport (for overlay).
@@ -211,7 +251,13 @@ async def get_hexbin_viewport(
 
 
 @router.get("/cell/{cell_id}")
-async def get_cell(cell_id: str) -> dict:
+async def get_cell(
+    cell_id: str = Path(
+        ...,
+        description="H3 cell ID",
+        example="891e0e4d253ffff",
+    ),
+) -> dict:
     """
     Get details for a specific H3 cell.
 
