@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from h3_api.config import settings
-from h3_api.routes import hexbin_router, health_router
+from h3_api.routes import health_router, hexbin_router
 from h3_api.services import get_db
 
 

@@ -1,7 +1,7 @@
 """Hexbin endpoint for H3 data."""
 
-from fastapi import APIRouter, Query, HTTPException
 import h3
+from fastapi import APIRouter, HTTPException, Query
 from h3 import LatLngPoly
 
 from h3_api.config import settings
@@ -96,12 +96,14 @@ async def get_hexbin_viewport(
         raise HTTPException(status_code=400, detail="Invalid bbox format")
 
     # Create viewport polygon using h3 v4 LatLngPoly (lat, lng order)
-    poly = LatLngPoly([
-        (min_lat, min_lng),
-        (max_lat, min_lng),
-        (max_lat, max_lng),
-        (min_lat, max_lng),
-    ])
+    poly = LatLngPoly(
+        [
+            (min_lat, min_lng),
+            (max_lat, min_lng),
+            (max_lat, max_lng),
+            (min_lat, max_lng),
+        ]
+    )
 
     # Get cells covering viewport
     cells = list(h3.polygon_to_cells(poly, res))

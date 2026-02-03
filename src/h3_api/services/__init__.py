@@ -1,5 +1,5 @@
 """Services for H3 API."""
 
-from .db import get_db, DatabaseService
+from .db import DatabaseService, get_db
 
 __all__ = ["get_db", "DatabaseService"]

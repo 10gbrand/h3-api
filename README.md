@@ -17,15 +17,24 @@ docker compose up
 ### Lokal utveckling
 
 ```bash
+# Starta devbox-miljö (installerar uv, task, etc.)
+devbox shell
+
 # Installera dependencies
-pip install uv
-uv sync
+task py:install-dev
 
 # Starta utvecklingsserver
-uv run uvicorn h3_api.main:app --reload
+task dev
 
-# Eller
-uv run python -m h3_api.main
+# API:t är tillgängligt på http://localhost:8000
+```
+
+#### Utan devbox
+
+```bash
+pip install uv
+uv pip install -e ".[dev]"
+uv run uvicorn h3_api.main:app --reload
 ```
 
 ## Endpoints
@@ -81,15 +90,45 @@ Frontend (map)
 
 ## Utveckling
 
+### Devbox
+
+Projektet använder [devbox](https://www.jetify.com/devbox) för att hantera utvecklingsverktyg:
+
+```bash
+# Starta devbox-miljö
+devbox shell
+```
+
+Inkluderade verktyg: `uv`, `go-task`, `gh`, `claude-code`, `curl`, `jq`, `tree`
+
+### Task-kommandon
+
+Vanliga kommandon (kör `task --list` för alla):
+
+| Kommando | Beskrivning |
+|----------|-------------|
+| `task dev` | Starta API med auto-reload |
+| `task test` | Kör tester |
+| `task fix` | Fixa lint/format automatiskt |
+| `task py:ci` | CI-kontroller (format, lint, test) |
+| `task py:precommit` | Fixa + verifiera innan commit |
+| `task api:health` | Testa health endpoint |
+| `task api:ready` | Testa ready endpoint |
+| `task api:docs` | Öppna Swagger docs |
+
 ### Tester
 
 ```bash
+task test
+# eller
 uv run pytest
 ```
 
 ### Linting
 
 ```bash
-uv run ruff check .
+task fix
+# eller
+uv run ruff check . --fix
 uv run ruff format .
 ```

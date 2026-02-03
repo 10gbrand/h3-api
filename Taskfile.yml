@@ -1,0 +1,26 @@
+version: "3"
+
+includes:
+  py: ./taskfiles/python.yml
+  api: ./taskfiles/api.yml
+
+tasks:
+  default:
+    desc: Visa tillgängliga kommandon
+    cmds:
+      - task --list
+
+  dev:
+    desc: Starta API-server med auto-reload
+    cmds:
+      - task api:dev
+
+  test:
+    desc: Kör tester
+    cmds:
+      - task py:test
+
+  fix:
+    desc: Fixa formatering och lint-fel
+    cmds:
+      - task py:fix
